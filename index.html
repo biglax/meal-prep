@@ -58,6 +58,7 @@
                 <button data-tab="dinner" onclick="setBankTab('dinner')" class="bank-tab badge bg-neutral-800 text-neutral-300">Dinner</button>
                 <button data-tab="snack" onclick="setBankTab('snack')" class="bank-tab badge bg-neutral-800 text-neutral-300">Snack</button>
                 <button data-tab="fav" onclick="setBankTab('fav')" class="bank-tab badge bg-neutral-800 text-yellow-400">★</button>
+                <button data-tab="down" onclick="setBankTab('down')" class="bank-tab badge bg-neutral-800 text-rose-400">👎</button>
             </div>
             <input id="bankSearch" oninput="renderBank()" placeholder="Search meals..." class="w-full mb-3 text-sm bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white placeholder-neutral-600 focus:outline-none focus:border-emerald-600">
             <div id="bankList" class="flex flex-col gap-2 max-h-[65vh] overflow-y-auto pr-1"></div>
@@ -284,6 +285,7 @@ function renderBank(){
     const list = document.getElementById('bankList');
     const tab = state.bankTab;
     let meals = allMeals().filter(m => {
+        if (tab === 'down') return ratingOf(m) === 'down';
         if (tab !== 'all' && tab !== 'fav' && m.t !== tab) return false;
         if (tab === 'fav' && !isFav(m)) return false;
         if (q && !(m.n.toLowerCase().includes(q))) return false;
@@ -295,7 +297,7 @@ function renderBank(){
     document.getElementById('bankCount').textContent = meals.length + ' meals';
     document.querySelectorAll('.bank-tab').forEach(b => {
         const active = b.dataset.tab === tab;
-        b.className = 'bank-tab badge ' + (active ? 'bg-emerald-600 text-white' : (b.dataset.tab==='fav' ? 'bg-neutral-800 text-yellow-400' : 'bg-neutral-800 text-neutral-300'));
+        b.className = 'bank-tab badge ' + (active ? 'bg-emerald-600 text-white' : (b.dataset.tab==='fav' ? 'bg-neutral-800 text-yellow-400' : b.dataset.tab==='down' ? 'bg-neutral-800 text-rose-400' : 'bg-neutral-800 text-neutral-300'));
     });
 }
 
