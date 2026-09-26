@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Meal Prep | 1940 kcal Cut</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+    body { font-family: 'Inter', system-ui, sans-serif; background: #121212; color: #e5e5e5; overscroll-behavior: none; }
+    .card { background: #1e1e1e; border: 1px solid #333; border-radius: 0.75rem; }
+    .meal-card { touch-action: none; }
+    .dragging-ghost { opacity: 0.85; transform: rotate(2deg) scale(1.02); box-shadow: 0 12px 24px rgba(0,0,0,.6); pointer-events: none; z-index: 1000; position: fixed; }
+    .drop-hint { outline: 2px dashed #10b981; outline-offset: 2px; background: rgba(16,185,129,0.06); }
+    .bar-track { background: #2d2d2d; border-radius: 9999px; height: 6px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 9999px; transition: width .3s ease; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #121212; }
+    ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+    .badge { font-size: 10px; padding: 2px 6px; border-radius: 9999px; font-weight: 700; }
+    .fade-in { animation: fadeIn .25s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    dialog::backdrop { background: rgba(0,0,0,.7); }
+    input[type=number] { -moz-appearance: textfield; }
+    .no-select { user-select: none; -webkit-user-select: none; }
+</style>
+</head>
+<body class="min-h-screen no-select">
+
+<!-- HEADER -->
+<header class="sticky top-0 z-40 bg-[#121212]/95 backdrop-blur border-b border-neutral-800">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+        <div class="flex-1 min-w-0">
+            <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight text-white">MEAL <span class="text-emerald-500">PREP</span> <span class="text-neutral-500 font-bold text-sm">| weekly cut planner</span></h1>
+            <p class="text-xs text-neutral-500 mt-0.5"><span id="targetLine">1940 kcal · 160P / 190C / 60F</span> · <span id="weekLabel"></span></p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="generateWeek(false)" title="Fill empty days with a generated plan" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors">🎲 Generate Week</button>
+            <button onclick="generateWeek(true)" title="Regenerate every day" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-bold px-3 py-2 rounded-lg border border-neutral-700 transition-colors">↻ Re-roll All</button>
+            <button onclick="openShopping()" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-bold px-3 py-2 rounded-lg border border-neutral-700 transition-colors">🛒 List</button>
+            <button onclick="openSettings()" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-bold px-3 py-2 rounded-lg border border-neutral-700 transition-colors">⚙</button>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-5 flex flex-col lg:flex-row gap-5">
+
+    <!-- MEAL BANK -->
+    <aside class="lg:w-80 w-full shrink-0">
+        <div class="card p-4 lg:sticky lg:top-24">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="font-bold text-white">Meal Bank</h2>
+                <span id="bankCount" class="text-xs text-neutral-500"></span>
+            </div>
+            <div id="bankTabs" class="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+                <button data-tab="all" onclick="setBankTab('all')" class="bank-tab badge bg-neutral-800 text-neutral-300">All</button>
+                <button data-tab="breakfast" onclick="setBankTab('breakfast')" class="bank-tab badge bg-neutral-800 text-neutral-300">Breakfast</button>
+                <button data-tab="lunch" onclick="setBankTab('lunch')" class="bank-tab badge bg-neutral-800 text-neutral-300">Lunch</button>
+                <button data-tab="dinner" onclick="setBankTab('dinner')" class="bank-tab badge bg-neutral-800 text-neutral-300">Dinner</button>
+                <button data-tab="snack" onclick="setBankTab('snack')" class="bank-tab badge bg-neutral-800 text-neutral-300">Snack</button>
+                <button data-tab="fav" onclick="setBankTab('fav')" class="bank-tab badge bg-neutral-800 text-yellow-400">★</button>
+            </div>
+            <input id="bankSearch" oninput="renderBank()" placeholder="Search meals..." class="w-full mb-3 text-sm bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white placeholder-neutral-600 focus:outline-none focus:border-emerald-600">
+            <div id="bankList" class="flex flex-col gap-2 max-h-[65vh] overflow-y-auto pr-1"></div>
+            <button onclick="openNewMeal()" class="mt-3 w-full text-xs text-neutral-400 hover:text-emerald-400 border border-dashed border-neutral-700 rounded-lg py-2 transition-colors">+ Add your own meal</button>
+        </div>
+    </aside>
+
+    <!-- WEEK GRID -->
+    <section id="weekGrid" class="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start"></section>
+
+    <!-- WEEKLY SUMMARY -->
+    <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 w-[94%] max-w-3xl">
+        <div id="weekBar" class="card px-4 py-2.5 flex items-center gap-4 shadow-2xl">
+            <div class="flex-1 min-w-0">
+                <div id="weekStats" class="text-xs text-neutral-300 font-semibold truncate">Week avg: –</div>
+                <div class="bar-track mt-1.5"><div id="weekProteinBar" class="bar-fill bg-rose-500" style="width:0%"></div></div>
+            </div>
+            <button onclick="openSummary()" class="bg-neutral-800 hover:bg-neutral-700 text-xs text-white font-bold px-3 py-2 rounded-lg border border-neutral-700">Weekly report</button>
+        </div>
+    </div>
+
+</main>
+
+<!-- MEAL DETAIL MODAL -->
+<dialog id="mealModal" class="card p-0 w-[92%] max-w-lg text-neutral-200 backdrop:text-black/70">
+    <div id="mealModalBody" class="p-5"></div>
+</dialog>
+
+<!-- SHOPPING LIST MODAL -->
+<dialog id="shopModal" class="card p-0 w-[92%] max-w-lg text-neutral-200 backdrop:text-black/70">
+    <div class="p-5">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-white text-lg">🛒 Shopping List</h3>
+            <button onclick="document.getElementById('shopModal').close()" class="text-neutral-500 hover:text-white text-xl leading-none">&times;</button>
+        </div>
+        <p id="shopWeek" class="text-xs text-neutral-500 mb-3"></p>
+        <div id="shopBody" class="max-h-[55vh] overflow-y-auto pr-1"></div>
+        <div class="flex gap-2 mt-4">
+            <button onclick="copyShopping()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm py-2.5 rounded-lg">📋 Copy list</button>
+            <button onclick="clearShopChecks()" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm px-3 py-2.5 rounded-lg border border-neutral-700">Reset checks</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- SUMMARY MODAL -->
+<dialog id="sumModal" class="card p-0 w-[92%] max-w-lg text-neutral-200 backdrop:text-black/70">
+    <div class="p-5">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-white text-lg">Weekly Report</h3>
+            <button onclick="document.getElementById('sumModal').close()" class="text-neutral-500 hover:text-white text-xl leading-none">&times;</button>
+        </div>
+        <div id="sumBody"></div>
+        <button onclick="copySummary()" class="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm py-2.5 rounded-lg">📋 Copy plan to clipboard</button>
+    </div>
+</dialog>
+
+<!-- SETTINGS MODAL -->
+<dialog id="setModal" class="card p-0 w-[92%] max-w-sm text-neutral-200 backdrop:text-black/70">
+    <div class="p-5">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold text-white text-lg">Daily Targets</h3>
+            <button onclick="document.getElementById('setModal').close()" class="text-neutral-500 hover:text-white text-xl leading-none">&times;</button>
+        </div>
+        <label class="text-xs text-neutral-400 font-bold uppercase">Calories (kcal)</label>
+        <input type="number" id="setCal" class="w-full mb-3 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white">
+        <label class="text-xs text-neutral-400 font-bold uppercase">Protein (g)</label>
+        <input type="number" id="setP" class="w-full mb-3 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white">
+        <label class="text-xs text-neutral-400 font-bold uppercase">Carbs (g)</label>
+        <input type="number" id="setC" class="w-full mb-3 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white">
+        <label class="text-xs text-neutral-400 font-bold uppercase">Fat (g)</label>
+        <input type="number" id="setF" class="w-full mb-4 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white">
+        <button onclick="saveTargets()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg">Save</button>
+    </div>
+</dialog>
+
+<!-- NEW MEAL MODAL -->
+<dialog id="newModal" class="card p-0 w-[92%] max-w-sm text-neutral-200 backdrop:text-black/70">
+    <div class="p-5">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold text-white text-lg">Add Your Own Meal</h3>
+            <button onclick="document.getElementById('newModal').close()" class="text-neutral-500 hover:text-white text-xl leading-none">&times;</button>
+        </div>
+        <label class="text-xs text-neutral-400 font-bold uppercase">Name</label>
+        <input id="newName" class="w-full mb-3 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white">
+        <div class="grid grid-cols-2 gap-2">
+            <div><label class="text-xs text-neutral-400 font-bold uppercase">Type</label>
+            <select id="newType" class="w-full mb-3 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white text-sm">
+                <option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option>
+            </select></div>
+            <div><label class="text-xs text-neutral-400 font-bold uppercase">Cook time</label>
+            <input id="newTime" placeholder="10 min" class="w-full mb-3 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white text-sm"></div>
+        </div>
+        <div class="grid grid-cols-4 gap-2 mb-3">
+            <div><label class="text-[10px] text-neutral-400 font-bold uppercase block">kcal</label><input type="number" id="newCal" class="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-2 text-white text-sm text-center"></div>
+            <div><label class="text-[10px] text-rose-400 font-bold uppercase block">P</label><input type="number" id="newP" class="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-2 text-white text-sm text-center"></div>
+            <div><label class="text-[10px] text-amber-400 font-bold uppercase block">C</label><input type="number" id="newC" class="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-2 text-white text-sm text-center"></div>
+            <div><label class="text-[10px] text-sky-400 font-bold uppercase block">F</label><input type="number" id="newF" class="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-2 text-white text-sm text-center"></div>
+        </div>
+        <label class="text-xs text-neutral-400 font-bold uppercase">Ingredients (one per line)</label>
+        <textarea id="newIng" rows="3" placeholder="200g chicken thigh" class="w-full mb-3 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white text-sm"></textarea>
+        <label class="text-xs text-neutral-400 font-bold uppercase">Steps (one per line)</label>
+        <textarea id="newSteps" rows="3" placeholder="1. Do the thing" class="w-full mb-4 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-white text-sm"></textarea>
+        <button onclick="saveNewMeal()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg">Add meal</button>
+    </div>
+</dialog>
+
+<script>
+/* ============================================================
+   MEAL DATABASE — easy batch/low-effort meals, macros estimated
+   from standard nutrition data (±10%). ing: [qty, item, aisle]
+   ============================================================ */
+const MEALS = [
+    // ---------- BREAKFASTS ----------
+    { id:'b1', t:'breakfast', n:'Overnight Protein Oats', cal:480, p:40, c:60, f:6, tm:'Prep night before',
+      ing:[['60g','rolled oats','Coles – dry goods'],['1 scoop (30g)','chocolate whey','Coles – health'],['200ml','skim milk','Coles – fridge'],['1','banana','Produce']],
+      st:['Night before: oats + milk + whey into a container, stir','Fridge overnight','Morning: slice banana on top. Eat.'] },
+    { id:'b2', t:'breakfast', n:'Scrambled Eggs on Toast', cal:380, p:25, c:25, f:18, tm:'6 min',
+      ing:[['3','eggs','Coles – fridge'],['2 slices','bread (toast)','Coles – bakery'],['5g','butter','Coles – fridge'],['1 handful','baby spinach','Produce']],
+      st:['Toast bread','Melt butter in pan, wilt spinach 30 sec','Add beaten eggs, stir low heat until just set','Salt, pepper, on toast.'] },
+    { id:'b3', t:'breakfast', n:'Greek Yogurt + Granola Bowl', cal:350, p:30, c:40, f:6, tm:'2 min',
+      ing:[['250g','Greek yogurt 0%','Coles – fridge'],['40g','granola','Coles – cereal'],['100g','frozen berries','Coles – frozen'],['1 tsp','honey','Coles – spreads']],
+      st:['Scoop yogurt in bowl','Microwave berries 45 sec','Dump granola + honey on top. Done.'] },
+    { id:'b4', t:'breakfast', n:'Whey Shake + PB Toast', cal:440, p:28, c:55, f:10, tm:'3 min',
+      ing:[['1 scoop (30g)','whey','Coles – health'],['250ml','water','—'],['2 slices','bread','Coles – bakery'],['15g','peanut butter','Coles – spreads'],['1','banana','Produce']],
+      st:['Shake whey + water','Toast with PB, banana on the side'] },
+    { id:'b5', t:'breakfast', n:'Egg & Ham Muffin Cups (batch)', cal:380, p:30, c:15, f:22, tm:'Batch Sun, 20 min',
+      tag:'Batch',
+      ing:[['6','eggs','Coles – fridge'],['4 slices','ham','Coles – deli'],['40g','tasty cheese','Coles – fridge'],['chop','spring onion','Produce']],
+      st:['Whisk eggs, fold in chopped ham + cheese + onion','Pour into 6 muffin cups','Bake 180°C for 18 min','Fridge 4 days: microwave 30 sec each morning.'] },
+
+    // ---------- LUNCHES ----------
+    { id:'l1', t:'lunch', n:'Chicken & Microwave Rice Bowl', cal:550, p:40, c:75, f:12, tm:'10 min',
+      ing:[['250g','microwave rice 90-sec pack','Coles – rice'],['150g','cooked chicken (breast or thigh, see dinner batch)',' butcher/Coles – meat'],['100g','frozen stir-fry veg','Coles – frozen'],['2 Tbsp','sweet chilli sauce','Coles – sauces']],
+      st:['Veg + rice: microwave 90 sec','Fold in pre-cooked chicken, microwave 60 sec more','Sauce over. Done.'] },
+    { id:'l2', t:'lunch', n:'Beef Mince Taco Bowl', cal:520, p:35, c:65, f:13, tm:'12 min',
+      ing:[['150g','lean beef mince','Butcher – meat'],['150g','cooked rice (microwave pack-ca)','Coles – rice'],['100g','corn, drained','Coles – canned'],['2 Tbsp','taco seasoning + salsa jar','Coles – sauces']],
+      st:['Brown mince in pan, dust taco seasoning + splash water','Microwave rice + corn','Bowl it up, salsa on top.'] },
+    { id:'l3', t:'lunch', n:'Tuna & Avocado Wraps', cal:380, p:30, c:40, f:12, tm:'4 min',
+      ing:[['2','small tortillas','Coles – bakery'],['1 tin 95g','tuna in springwater','Coles – tinned'],['1/2','avocado','Produce'],['1 bag','salad kit','Produce']],
+      st:['Mash avocado on wraps','Flake tuna on top + salad kit','Roll, slice, done.'] },
+    { id:'l4', t:'lunch', n:'BBQ Chicken & Pesto Rice', cal:500, p:50, c:40, f:15, tm:'5 min',
+      ing:[['150g','Coalls rotisserie chicken breast (strip from whole chook)','Coles – hot chook'],['150g','microwave rice','Coles – rice'],['1 Tbsp','basil pesto jar','Coles – spreads'],['1 bag','salad kit','Produce']],
+      st:['Microwave rice 90 sec','Stir pesto through','Shred chook breast over the top. Half the chook = 2 lunches.'] },
+    { id:'l5', t:'lunch', n:'Turkey Sandwich Stack', cal:450, p:35, c:50, f:12, tm:'3 min',
+      ing:[['4 slices',' sourdough','Coles – bakery'],['100g','shaved turkey','Coles – deli'],['2 slices','tasty cheese','Coles – fridge'],['1 bag','pre-mixed salad','Produce'],['10g','light mayo','Coles – spreads']],
+      st:['Stack everything between bread','Cut in half. That is it.'] },
+
+    // ---------- DINNERS ----------
+    { id:'d1', t:'dinner', n:'Sheet-Pan Chicken & Veg', cal:560, p:55, c:30, f:23, tm:'30 min (2 min prep)',
+      tag:'Batch +2 meals',
+      ing:[['500g','chicken thigh fillets','Butcher – meat'],['500g','diced pumpkin + potato pack','Produce'],['200g','frozen mixed veg','Coles – frozen'],['10ml','olive oil','Coles – oils'],['paprika, salt, garlic powder','—','Coles – spices']],
+      st:['Oven 200°C','Toss chicken + veg + oil + seasoning on 2 trays','Roast 30 min, flip once','Eats dinner tonight + 2 lunches this week.'] },
+    { id:'d2', t:'dinner', n:'One-Pot Spag Bol', cal:620, p:45, c:65, f:20, tm:'25 min',
+      tag:'Batch +2 meals',
+      ing:[['500g','lean beef mince','Butcher – meat'],['250g','dry spaghetti','Coles – pasta'],['700g','passata jar','Coles – sauces'],['1','onion + jar garlic','Produce'],['20g','grated parmesan','Coles – fridge']],
+      st:['Brown mince + onion in big pot','Pour passata in, simmer 10 min','Snap spaghetti in half, submerge, lid, 12 min','Stir twice so it does not catch. Parm on top. 2-3 serves.'] },
+    { id:'d3', t:'dinner', n:'Air Fryer Salmon + Rice + Salad', cal:510, p:45, c:45, f:17, tm:'12 min',
+      ing:[['180g','salmon fillet','Seafood – fresh/frozen'],['150g','microwave rice','Coles – rice'],['1 bag','salad kit','Produce'],['soy + honey glaze','—','Coles – sauces']],
+      st:['Air fryer 180°C salmon 10-12 min','Rice, microwave','Glaze: soy + honey, brushed on fish. Bag salad on the side.'] },
+    { id:'d4', t:'dinner', n:'Steak Night', cal:620, p:60, c:50, f:15, tm:'12 min',
+      ing:[['250g','beef rump steak','Butcher – meat'],['250g','sweet potato','Produce'],['100g','frozen beans','Coles – frozen'],['5g','butter','Coles – fridge']],
+      st:['Sweet potato: microwave 8 min or air fryer 20','Steak: hot pan 3 min a side, rest 5','Butter on steak, beans on the side.'] },
+    { id:'d5', t:'dinner', n:'Chicken Stir-Fry Kit', cal:440, p:40, c:60, f:5, tm:'10 min',
+      ing:[['400g pack','stir-fry veg kit','Produce'],['150g','chicken strips','Butcher – meat'],['200g','microwave rice','Coles – rice'],['1 jar','stir-fry sauce (honey soy etc)','Coles – sauces']],
+      st:['Wok or big pan, sear chicken strips 4 min','Dump veg pack in, 3 min','Sauce in, 1 min. Rice on the side.'] },
+    { id:'d6', t:'dinner', n:'Slow-Cooker Pulled Chicken Burrito Bowl', cal:520, p:60, c:60, f:5, tm:'5 min prep (slow cooker 4h)',
+      tag:'Batch +3 meals',
+      ing:[['700g','chicken breast','Butcher – meat'],['1 jar','salsa','Coles – sauces'],['1 can','black beans','Coles – tinned'],['250g','microwave rice','Coles – rice']],
+      st:['Chicken + jar of salsa in slow cooker, low 4 hr','Shred with two forks','Bowl: chicken + drained beans + microwave rice','Tonight + 3 lunches sorted.'] },
+    { id:'d7', t:'dinner', n:'Rotisserie Chook Plate', cal:580, p:65, c:50, f:12, tm:'3 min (zero cook)',
+      ing:[['1','Coles hot rotisserie chicken','Coles – hot food'],['200g','microwave rice','Coles – rice'],['1 bag','salad kit','Produce'],['2 Tbsp','bbq sauce','Coles – sauces']],
+      st:['Tear half chock into plate (you get 2 dinners + lunch meat)','Rice in microwave','Salad + sauce. Zero cooking.'] },
+    { id:'d8', t:'dinner', n:'Crumbed Fish & Chips (Air Fryer)', cal:480, p:40, c:45, f:15, tm:'15 min',
+      ing:[['2','frozen crumbed fish fillets','Coles – frozen'],['150g','frozen chips','Coles – frozen'],['100g','frozen peas','Coles – frozen'],['light tartare','—','Coles – fridge']],
+      st:['Fish + chips in the air fryer 200°C, 12-14 min','Microwave peas','Squeeze of lemon if you are fancy.'] },
+    { id:'d9', t:'dinner', n:'Smoker: Brisket Bowl (Weekend)', cal:500, p:45, c:35, f:17, tm:'Smoke Sat → 3 dinners',
+      tag:'Batch +2 meals',
+      ing:[['1.5-2kg','brisket point','Butcher – meat'],['rub','coffee/salt/pepper rub','Coles – spices'],['600g','potato or pumpkin','Produce'],['1 bag','slaw kit','Produce']],
+      st:['Sat: rub brisket, smoke low 110-120°C till probe-tender (or oven if lazy)','Rest, portion into 3 x 150g serves','Dinners: brisket + roast potato + slaw. Monday lunch: leftover bowl.'] },
+
+    // ---------- SNACKS ----------
+    { id:'s1', t:'snack', n:'Whey Shake (Water)', cal:120, p:24, c:2, f:1, tm:'1 min',
+      ing:[['1 scoop (30g)','whey','Coles – health'],['350ml','water','—']],
+      st:['Shaker bottle. Shake.'] },
+    { id:'s2', t:'snack', n:'Whey Shake (Milk)', cal:200, p:31, c:13, f:2, tm:'1 min',
+      ing:[['1 scoop (30g)','whey','Coles – health'],['250ml','skim milk','Coles – fridge']],
+      st:['Shaker bottle. Shake.'] },
+    { id:'s3', t:'snack', n:'Rice Cakes + Tuna Tin', cal:200, p:26, c:20, f:2, tm:'2 min',
+      ing:[['3','rice cakes','Coles – snacks'],['1 tin 95g','tuna in springwater','Coles – tinned']],
+      st:['Drain tuna, pile on rice cakes. Hot sauce if you want.'] },
+    { id:'s4', t:'snack', n:'Greek Yogurt + Granola Cup', cal:220, p:20, c:26, f:4, tm:'1 min',
+      ing:[['170g','Chobani/Greek yogurt pot','Coles – fridge'],['30g','granola','Coles – cereal']],
+      st:['Granola on yogurt. Spoon.'] },
+    { id:'s5', t:'snack', n:'Apple + Babybel', cal:140, p:5, c:20, f:4, tm:'0 min',
+      ing:[['1','apple','Produce'],['1','Babybel light','Coles – fridge']],
+      st:['Bite both.'] },
+];
+
+/* ---------- APP STATE ---------- */
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const LS_KEY = 'meal_prep_state_v1';
+let state = {
+    week: {},            // {Mon: [{m:'d1',port:1}], ...}
+    ratings: {},         // {mealId: 'up'|'down'}
+    favs: {},            // {mealId: true}
+    custom: [],          // user-added meals
+    shopChecks: {},      // {"item|aisle": true}
+    targets: { cal:1940, p:160, c:190, f:60 },
+    bankTab: 'all'
+};
+function loadState(){ try { const s = JSON.parse(localStorage.getItem(LS_KEY)); if(s) state = {...state, ...s}; } catch(e){} }
+function saveState(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+function allMeals(){ return MEALS.concat(state.custom); }
+function mealById(id){ return allMeals().find(m => m.id === id); }
+
+/* ---------- BANK ---------- */
+function setBankTab(t){ state.bankTab = t; saveState(); renderBank(); }
+function ratingOf(m){ return state.ratings[m.id] || ''; }
+function isFav(m){ return !!state.favs[m.id]; }
+
+function renderBank(){
+    const q = (document.getElementById('bankSearch').value || '').toLowerCase();
+    const list = document.getElementById('bankList');
+    const tab = state.bankTab;
+    let meals = allMeals().filter(m => {
+        if (tab !== 'all' && tab !== 'fav' && m.t !== tab) return false;
+        if (tab === 'fav' && !isFav(m)) return false;
+        if (q && !(m.n.toLowerCase().includes(q))) return false;
+        return true;
+    });
+    // sort: rated-up first, rated-down last
+    meals.sort((a,b) => { const av = ratingOf(a)==='up'?1:ratingOf(a)==='down'?-1:0; const bv = ratingOf(b)==='up'?1:ratingOf(b)==='down'?-1:0; return bv - av; });
+    list.innerHTML = meals.map(m => bankCard(m)).join('');
+    document.getElementById('bankCount').textContent = meals.length + ' meals';
+    document.querySelectorAll('.bank-tab').forEach(b => {
+        const active = b.dataset.tab === tab;
+        b.className = 'bank-tab badge ' + (active ? 'bg-emerald-600 text-white' : (b.dataset.tab==='fav' ? 'bg-neutral-800 text-yellow-400' : 'bg-neutral-800 text-neutral-300'));
+    });
+}
+
+function bankCard(m){
+    const r = ratingOf(m);
+    const fav = isFav(m);
+    const badgeCol = m.t==='breakfast' ? 'bg-sky-900 text-sky-300' : m.t==='lunch' ? 'bg-amber-900 text-amber-300' : m.t==='dinner' ? 'bg-rose-900 text-rose-300' : 'bg-emerald-900 text-emerald-300';
+    return `
+    <div class="meal-card bg-neutral-900 border border-neutral-800 rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-neutral-600 transition-colors" data-mid="${m.id}">
+        <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+                <div class="flex items-center gap-1.5 mb-1">
+                    <span class="badge ${badgeCol}">${m.t==='breakfast'?'Bfast':m.t==='lunch'?'Lunch':m.t==='dinner'?'Dinner':'Snack'}</span>
+                    ${m.tag ? `<span class="badge bg-neutral-800 text-neutral-400">${m.tag}</span>` : ''}
+                    ${m.tm ? `<span class="badge bg-neutral-800 text-neutral-500">${m.tm}</span>` : ''}
+                </div>
+                <span class="text-sm font-semibold text-white block leading-snug">${m.n}</span>
+            </div>
+            <button onclick="toggleFav('${m.id}')" class="text-lg leading-none ${fav?'text-yellow-400':'text-neutral-700 hover:text-yellow-500'} transition-colors">★</button>
+        </div>
+        <div class="flex justify-between items-center mt-2 text-[11px]">
+            <span><span class="text-emerald-400 font-bold">${m.cal}</span> <span class="text-neutral-500">kcal</span> · <span class="text-rose-400 font-semibold">${m.p}P</span> <span class="text-amber-400 font-semibold">${m.c}C</span> <span class="text-sky-400 font-semibold">${m.f}F</span></span>
+            <span class="flex gap-1">
+                <button onclick="rate('${m.id}','up')" class="${r==='up'?'text-emerald-400':'text-neutral-600 hover:text-emerald-400'}">👍</button>
+                <button onclick="rate('${m.id}','down')" class="${r==='down'?'text-rose-500':'text-neutral-600 hover:text-rose-500'}">👎</button>
+                <button onclick="openMeal('${m.id}')" class="text-neutral-500 hover:text-white px-1">ℹ</button>
+            </span>
+        </div>
+    </div>`;
+}
+
+function toggleFav(id){ state.favs[id] = !state.favs[id] ? true : false; if(!state.favs[id]) delete state.favs[id]; saveState(); renderBank(); renderWeek(); }
+function rate(id, dir){ if(state.ratings[id] === dir) delete state.ratings[id]; else state.ratings[id] = dir; saveState(); renderBank(); renderWeek(); }
+
+/* ---------- WEEK GRID ---------- */
+function renderWeek(){
+    const grid = document.getElementById('weekGrid');
+    DAYS.forEach(d => {
+        if (!state.week[d]) state.week[d] = [];
+    });
+    grid.innerHTML = DAYS.map(d => dayCard(d)).join('');
+    updateWeekBar();
+    attachDropZones();
+}
+
+function dayCard(d){
+    const items = state.week[d] || [];
+    let cal=0,p=0,c=0,f=0;
+    items.forEach(it => { const m = mealById(it.m); if(m){ cal += Math.round(m.cal*it.port); p += Math.round(m.p*it.port); c += Math.round(m.c*it.port); f += Math.round(m.f*it.port); } });
+    const t = state.targets;
+    const pc = Math.min(100, Math.round(cal/t.cal*100));
+    const col = cal===0 ? 'bg-neutral-700 text-neutral-300' : (pc>=95 && pc<=105) ? 'bg-emerald-900 text-emerald-300' : (pc>=90 && pc<=112) ? 'bg-amber-900 text-amber-300' : 'bg-rose-900 text-rose-300';
+    const macroRow = (val, max, fill) => {
+        const w = Math.min(100, Math.round(val/max*100));
+        const over = val > max*1.06;
+        return `<div class="flex items-center gap-1.5"><span class="text-[9px] w-6 font-bold ${over?'text-rose-400':'text-neutral-500'}">${over?'!':''}${w}%</span><div class="bar-track flex-1"><div class="bar-fill ${over?'bg-rose-500':fill}" style="width:${w}%"></div></div></div>`;
+    };
+    const mealRows = items.map((it,i) => {
+        const m = mealById(it.m); if(!m) return '';
+        const k = d + '_' + i;
+        return `
+        <div class="meal-card bg-neutral-800 border border-neutral-700 rounded-lg px-2.5 py-2 flex items-center gap-2" data-mid="${m.id}" data-day="${d}" data-idx="${i}">
+            <div class="flex-1 min-w-0">
+                <span class="text-xs font-semibold text-white block truncate">${m.n}</span>
+                <span class="text-[10px] text-neutral-400">${Math.round(m.cal*it.port)} kcal · ${Math.round(m.p*it.port)}P · ${Math.round(m.c*it.port)}C · ${Math.round(m.f*it.port)}F</span>
+            </div>
+            <div class="flex flex-col items-center gap-0.5">
+                <button onclick="bumpPort('${d}',${i},1)" class="text-neutral-500 hover:text-emerald-400 leading-none text-xs">▲</button>
+                <span class="text-[10px] text-neutral-300 font-bold">${it.port}x</span>
+                <button onclick="bumpPort('${d}',${i},-1)" class="text-neutral-500 hover:text-amber-400 leading-none text-xs">▼</button>
+            </div>
+            <button onclick="openMeal('${m.id}')" class="text-neutral-500 hover:text-white text-xs px-0.5">ℹ</button>
+            <button onclick="removeItem('${d}',${i})" class="text-neutral-600 hover:text-rose-500 text-sm leading-none px-0.5">&times;</button>
+        </div>`;
+    }).join('');
+    return `
+    <div class="card p-3 fade-in" data-dayzone="${d}">
+        <div class="flex justify-between items-center mb-2">
+            <h3 class="font-bold text-white text-sm">${d}</h3>
+            <span class="badge ${col}">${cal} kcal</span>
+        </div>
+        <div class="space-y-1 mb-2">
+            ${macroRow(cal,t.cal,'bg-emerald-500')}
+            ${macroRow(p,t.p,'bg-rose-500')}
+            ${macroRow(c,t.c,'bg-amber-500')}
+            ${macroRow(f,t.f,'bg-sky-500')}
+        </div>
+        <div class="dropzone flex flex-col gap-1.5 min-h-[70px]" data-drop="${d}">${mealRows}</div>
+        <div class="text-center text-[10px] text-neutral-600 mt-1">drag meals in from the bank</div>
+    </div>`;
+}
+
+function bumpPort(d, i, delta){
+    const item = state.week[d][i];
+    const m = mealById(item.m);
+    let p = Math.round((item.port + delta*0.5)*10)/10;
+    if (p < 0.5 || p > 3) return;
+    item.port = p;
+    saveState(); renderWeek();
+}
+function removeItem(d, i){ state.week[d].splice(i,1); saveState(); renderWeek(); }
+
+function updateWeekBar(){
+    let totalCal=0,totalP=0, daysFilled=0, dP=0;
+    DAYS.forEach(d => {
+        let cal=0,p=0;
+        (state.week[d]||[]).forEach(it => { const m = mealById(it.m); if(m){ cal += Math.round(m.cal*it.port); p += Math.round(m.p*it.port); } });
+        if(cal>0){ daysFilled++; totalCal+=cal; totalP+=p; }
+        dP += p;
+    });
+    if (daysFilled === 0){ document.getElementById('weekStats').textContent = 'Week avg: – drop meals in or hit Generate'; document.getElementById('weekProteinBar').style.width='0%'; return; }
+    const avg = Math.round(totalCal/daysFilled);
+    const avgP = Math.round(totalP/daysFilled);
+    document.getElementById('weekStats').textContent = `Week avg: ${avg} kcal / ${avgP}g protein (${daysFilled}/7 days planned)`;
+    document.getElementById('weekProteinBar').style.width = Math.min(100, Math.round(avgP/state.targets.p*100)) + '%';
+}
+
+/* ---------- GENERATOR ---------- */
+function pick(pool, weightsFn, exclude){
+    const cand = pool.filter(m => !exclude.includes(m.id));
+    if (!cand.length) return pool[Math.floor(Math.random()*pool.length)];
+    const ws = cand.map(weightsFn);
+    const sum = ws.reduce((a,b)=>a+b,0);
+    let r = Math.random()*sum;
+    for (let i=0;i<cand.length;i++){ r -= ws[i]; if (r<=0) return cand[i]; }
+    return cand[cand.length-1];
+}
+function weightOf(m){
+    const r = ratingOf(m);
+    if (r === 'down') return 0.05;
+    if (r === 'up') return 3;
+    if (isFav(m)) return 2;
+    return 1;
+}
+function generateWeek(force){
+    const used = {};
+    DAYS.forEach(d => {
+        const cur = state.week[d] || [];
+        if (!force && cur.length) { used[d] = cur.map(i=>i.m); return; }
+        state.week[d] = [];
+        const picked = [];
+        const localUsed = [];
+        // breakfast
+        const b = pick(allMeals().filter(m=>m.t==='breakfast'), weightOf, localUsed); if(b){ state.week[d].push({m:b.id,port:1}); picked.push(b); localUsed.push(b.id); }
+        // one main for lunch (batch dinners can cover lunch as leftovers) + a different main for dinner
+        const mainPool = allMeals().filter(m=>m.t==='lunch' || m.t==='dinner');
+        const l = pick(mainPool, weightOf, localUsed); if(l){ state.week[d].push({m:l.id,port:1}); picked.push(l); localUsed.push(l.id); }
+        // dinner: exclude everything already picked today + yesterday's dinner for variety
+        const prevDay = DAYS[(DAYS.indexOf(d)+6)%7];
+        const dExcl = localUsed.concat((used[prevDay]||[]).slice(-2));
+        let dPool = allMeals().filter(m=>m.t==='dinner' && !dExcl.includes(m.id));
+        if (!dPool.length) dPool = allMeals().filter(m=>(m.t==='lunch'||m.t==='dinner') && !localUsed.includes(m.id));
+        if (!dPool.length) dPool = allMeals().filter(m=>m.t==='lunch'||m.t==='dinner');
+        const dn = pick(dPool, m => weightOf(m) * (m.t==='dinner' ? 1.5 : 1), []);
+        state.week[d].push({m:dn.id,port:1}); picked.push(dn); localUsed.push(dn.id);
+        // snacks to close cal gap (shake / yogurt / rice cake)
+        let diff = state.targets.cal - (picked.reduce((s,m)=>s+m.cal,0));
+        const snacks = allMeals().filter(m=>m.t==='snack').sort((a,b)=>b.cal-a.cal);
+        for (const s of snacks){
+            if (diff >= s.cal - 40){ state.week[d].push({m:s.id,port:1}); picked.push(s); diff -= s.cal; }
+            if (diff <= 60) break;
+        }
+        used[d] = state.week[d].map(i=>i.m);
+    });
+    saveState(); renderWeek();
+}
+
+/* ---------- DRAG & DROP (pointer events, touch+mouse) ---------- */
+let dragEl = null, dragData = null, ghost = null;
+function attachDropZones(){
+    document.querySelectorAll('.meal-card').forEach(el => {
+        if (el.dataset.dragBound) return;
+        el.dataset.dragBound = '1';
+        el.addEventListener('pointerdown', onDragStart);
+    });
+}
+function onDragStart(e){
+    if (e.target.closest('button')) return; // buttons stay clickable
+    dragEl = this;
+    const mid = dragEl.dataset.mid;
+    const fromDay = dragEl.dataset.day || null;
+    const idx = dragEl.dataset.idx !== undefined ? parseInt(dragEl.dataset.idx) : null;
+    const m = mealById(mid); if(!m) return;
+    dragData = { mid, fromDay, idx };
+    this.setPointerCapture && this.setPointerCapture(e.pointerId);
+    const rect = this.getBoundingClientRect();
+    ghost = this.cloneNode(true);
+    ghost.classList.add('dragging-ghost');
+    ghost.style.width = rect.width + 'px';
+    document.body.appendChild(ghost);
+    moveGhost(e);
+    dragEl.style.opacity = 0.35;
+    document.querySelectorAll('[data-dayzone]').forEach(z => z.classList.remove('drop-hint'));
+    document.addEventListener('pointermove', moveGhost);
+    document.addEventListener('pointerup', onDragEnd, { once:true });
+}
+function moveGhost(e){
+    if (!ghost) return;
+    ghost.style.left = (e.clientX + 8) + 'px';
+    ghost.style.top = (e.clientY - 20) + 'px';
+    // highlight nearest day zone
+    const zone = zoneUnder(e.clientX, e.clientY);
+    document.querySelectorAll('[data-dayzone]').forEach(z => z.classList.remove('drop-hint'));
+    if (zone) zone.classList.add('drop-hint');
+}
+function zoneUnder(x, y){
+    const zones = [...document.querySelectorAll('[data-dayzone]')];
+    for (const z of zones){
+        const r = z.getBoundingClientRect();
+        if (x>=r.left && x<=r.right && y>=r.top-40 && y<=r.bottom+40) return z;
+    }
+    return null;
+}
+function onDragEnd(e){
+    document.removeEventListener('pointermove', moveGhost);
+    if (ghost){ ghost.remove(); ghost = null; }
+    if (!dragEl) return;
+    dragEl.style.opacity = '';
+    document.querySelectorAll('[data-dayzone]').forEach(z => z.classList.remove('drop-hint'));
+    const zone = zoneUnder(e.clientX, e.clientY);
+    const { mid, fromDay, idx } = dragData;
+    if (zone){
+        const d = zone.dataset.dayzone;
+        if (fromDay === d && idx !== null){ /* dropped back on own day: keep position */ }
+        else if (fromDay && idx !== null){
+            // move between days
+            const it = state.week[fromDay].splice(idx,1)[0];
+            state.week[d].push(it);
+        } else {
+            // new from bank
+            state.week[d].push({ m: mid, port: 1 });
+        }
+        saveState();
+    }
+    dragEl = null; dragData = null;
+    renderWeek(); // re-render (also re-binds drag)
+}
+
+/* ---------- MEAL DETAIL ---------- */
+function openMeal(id){
+    const m = mealById(id); if(!m) return;
+    const body = document.getElementById('mealModalBody');
+    const r = ratingOf(m);
+    const ingRows = (m.ing||[]).map(i=>`<li class="text-sm text-neutral-300 flex justify-between gap-3 border-b border-neutral-800 py-1"><span>${i[0]} ${i[1]}</span><span class="text-neutral-600 text-xs">${i[2]||''}</span></li>`).join('');
+    const stepRows = (m.st||[]).map((s,i)=>`<li class="text-sm text-neutral-300 flex gap-2 py-1"><span class="text-emerald-500 font-bold">${i+1}.</span><span>${s}</span></li>`).join('');
+    body.innerHTML = `
+        <div class="flex justify-between items-start mb-2">
+            <h3 class="font-bold text-white text-lg pr-4">${m.n}</h3>
+            <button onclick="document.getElementById('mealModal').close()" class="text-neutral-500 hover:text-white text-xl leading-none">&times;</button>
+        </div>
+        <div class="flex gap-2 mb-3">
+            <span class="badge bg-emerald-900 text-emerald-300">${m.cal} kcal</span>
+            <span class="badge bg-rose-900 text-rose-300">${m.p}P</span>
+            <span class="badge bg-amber-900 text-amber-300">${m.c}C</span>
+            <span class="badge bg-sky-900 text-sky-300">${m.f}F</span>
+            ${m.tm ? `<span class="badge bg-neutral-800 text-neutral-400">⏱ ${m.tm}</span>` : ''}
+        </div>
+        ${ingRows ? `<h4 class="text-xs font-bold text-neutral-400 uppercase mb-1">Shopping</h4><ul class="mb-3">${ingRows}</ul>` : ''}
+        ${stepRows ? `<h4 class="text-xs font-bold text-neutral-400 uppercase mb-1">Steps</h4><ol class="mb-3">${stepRows}</ol>` : ''}
+        <div class="flex gap-2 mt-4">
+            <button onclick="rate('${m.id}','up');openMeal('${m.id}')" class="flex-1 ${r==='up'?'bg-emerald-600':'bg-neutral-800'} text-sm font-bold py-2 rounded-lg ${r==='up'?'text-white':'text-neutral-300'}">👍 Like it</button>
+            <button onclick="rate('${m.id}','down');openMeal('${m.id}')" class="flex-1 ${r==='down'?'bg-rose-700':'bg-neutral-800'} text-sm font-bold py-2 rounded-lg ${r==='down'?'text-white':'text-neutral-300'}">👎 Nah</button>
+            ${!MEALS.find(x=>x.id===m.id) ? `<button onclick="deleteCustom('${m.id}')" class="bg-neutral-900 text-rose-400 text-sm px-3 rounded-lg border border-neutral-800">Delete</button>` : ''}
+        </div>`;
+    document.getElementById('mealModal').showModal();
+}
+function deleteCustom(id){
+    if(!confirm('Delete this meal permanently?')) return;
+    state.custom = state.custom.filter(m => m.id !== id);
+    saveState();
+    document.getElementById('mealModal').close();
+    renderBank(); renderWeek();
+}
+
+/* ---------- NEW MEAL ---------- */
+function openNewMeal(){
+    ['newName','newCal','newP','newC','newF','newIng','newSteps','newTime'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('newModal').showModal();
+}
+function saveNewMeal(){
+    const n = document.getElementById('newName').value.trim();
+    const cal = parseInt(document.getElementById('newCal').value)||0;
+    if (!n || !cal){ alert('Need at least a name and calories.'); return; }
+    const p = parseInt(document.getElementById('newP').value)||0;
+    const c = parseInt(document.getElementById('newC').value)||0;
+    const f = parseInt(document.getElementById('newF').value)||0;
+    const ing = document.getElementById('newIng').value.split('\n').map(s=>s.trim()).filter(Boolean).map(s=>[s,'','']);
+    const st = document.getElementById('newSteps').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    const id = 'u' + Date.now();
+    state.custom.push({ id, t: document.getElementById('newType').value, n, cal, p, c, f, tm: document.getElementById('newTime').value.trim(), ing, st });
+    saveState();
+    document.getElementById('newModal').close();
+    renderBank();
+}
+
+/* ---------- SHOPPING LIST ---------- */
+function openShopping(){
+    const agg = {};
+    DAYS.forEach(d => (state.week[d]||[]).forEach(it => {
+        const m = mealById(it.m); if(!m) return;
+        (m.ing||[]).forEach(([q, item, aisle]) => {
+            const key = item + '|' + (aisle||'Other');
+            agg[key] = agg[key] || { q:new Set(), n:0, aisle: aisle||'Other' };
+            if (q && !/^(salt|pepper|—|paprika|chop|rub)$/.test(q.trim())) agg[key].q.add(q);
+            agg[key].n += it.port;
+        });
+    }));
+    const aisleOrder = ['Butcher – meat','Coles – hot food','Produce','Coles – fridge','Coles – frozen','Coles – rice','Coles – pasta','Coles – tinned','Coles – sauces','Coles – spreads','Coles – bakery','Coles – cereal','Coles – dry goods','Coles – health','Coles – snacks','Coles – spices','Coles – oils','Seafood – fresh/frozen','Other'];
+    const byAisle = {};
+    Object.entries(agg).forEach(([k,v]) => { (byAisle[v.aisle] = byAisle[v.aisle] || []).push({k, ...v}); });
+    let html = '';
+    aisleOrder.filter(a => byAisle[a]).forEach(a => {
+        html += `<h4 class="text-xs font-bold text-emerald-400 uppercase mt-3 mb-1">${a}</h4>`;
+        byAisle[a].forEach(it => {
+            const checked = state.shopChecks[it.k];
+            const qty = [...it.q].join(' + ') + (it.q.size>1 ? '' : '') + (it.n>1 ? ` <span class="text-neutral-600">(x${it.n})</span>` : '');
+            html += `<label class="flex items-center gap-2 py-1 border-b border-neutral-800 cursor-pointer">
+                <input type="checkbox" ${checked?'checked':''} onchange="shopCheck('${it.k.replace(/'/g,"\\'")}', this.checked)" class="accent-emerald-600">
+                <span class="text-sm ${checked?'text-neutral-600 line-through':'text-neutral-200'}">${qty && qty!=='undefined' ? qty : ''} ${it.k.split('|')[0]}</span>
+            </label>`;
+        });
+    });
+    if (!html) html = '<p class="text-sm text-neutral-500 py-6 text-center">Plan a week first — the list is built from what you scheduled.</p>';
+    document.getElementById('shopBody').innerHTML = html;
+    document.getElementById('shopWeek').textContent = 'for ' + weekRangeLabel();
+    document.getElementById('shopModal').showModal();
+}
+function shopCheck(k, v){ state.shopChecks[k] = v; saveState(); openShopping(); /* refresh strikethrough */ }
+function clearShopChecks(){ state.shopChecks = {}; saveState(); openShopping(); }
+function copyShopping(){
+    let txt = 'SHOPPING LIST (' + weekRangeLabel() + ')\n';
+    document.querySelectorAll('#shopBody h4').forEach(h => {
+        txt += '\n' + h.textContent + '\n';
+        let n = h.nextElementSibling;
+        while (n && n.tagName === 'LABEL'){
+            const line = '  [ ] ' + n.querySelector('span').textContent.trim();
+            txt += line + '\n';
+            n = n.nextElementSibling;
+        }
+    });
+    navigator.clipboard.writeText(txt).then(()=>alert('Copied!')).catch(()=>{
+        const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); alert('Copied!');
+    });
+}
+
+/* ---------- WEEKLY SUMMARY ---------- */
+function openSummary(){
+    const t = state.targets;
+    let rows = '', totalCal=0, totalP=0, filled=0;
+    DAYS.forEach(d => {
+        const items = state.week[d]||[];
+        let cal=0,p=0; items.forEach(it=>{ const m=mealById(it.m); if(m){cal+=Math.round(m.cal*it.port);p+=Math.round(m.p*it.port);} });
+        if(items.length){ filled++; totalCal+=cal; totalP+=p; rows += `<div class="flex justify-between py-1 border-b border-neutral-800 text-sm"><span class="font-semibold text-white w-10">${d}</span><span class="text-neutral-300 truncate pr-3 flex-1">${items.map(i=>mealById(i.m)?`${mealById(i.m).n}${i.port!==1?' ('+i.port+'x)':''}`:'').join(' + ')}</span><span class="${Math.abs(cal-t.cal)<=t.cal*0.06?'text-emerald-400':'text-neutral-400'} font-bold w-20 text-right">${cal} / ${p}g</span></div>`; }
+        else rows += `<div class="flex justify-between py-1 border-b border-neutral-800 text-sm"><span class="font-semibold w-10 text-neutral-500">${d}</span><span class="text-neutral-600 flex-1">not planned</span><span class="text-neutral-700 w-20 text-right">–</span></div>`;
+    });
+    const avg = filled?Math.round(totalCal/filled):0;
+    const avgP = filled?Math.round(totalP/filled):0;
+    document.getElementById('sumBody').innerHTML = `
+        <div class="grid grid-cols-3 gap-2 mb-4 text-center">
+            <div class="bg-neutral-900 rounded-lg p-2"><div class="text-[10px] text-neutral-500 uppercase font-bold">Avg kcal</div><div class="text-lg font-extrabold ${avg>=t.cal*0.95&&avg<=t.cal*1.05?'text-emerald-400':'text-amber-400'}">${avg||'–'}</div></div>
+            <div class="bg-neutral-900 rounded-lg p-2"><div class="text-[10px] text-neutral-500 uppercase font-bold">Avg protein</div><div class="text-lg font-extrabold text-rose-400">${avgP||'–'}g</div></div>
+            <div class="bg-neutral-900 rounded-lg p-2"><div class="text-[10px] text-neutral-500 uppercase font-bold">Days planned</div><div class="text-lg font-extrabold text-white">${filled}/7</div></div>
+        </div>
+        ${rows}`;
+    document.getElementById('sumModal').showModal();
+}
+function copySummary(){
+    const t = state.targets;
+    let txt = 'MEAL PLAN — ' + weekRangeLabel() + '\nTarget: ' + t.cal + ' kcal · ' + t.p + 'P/' + t.c + 'C/' + t.f + 'F\n';
+    DAYS.forEach(d => {
+        const items = state.week[d]||[];
+        if (!items.length){ txt += '\n' + d + ': (not planned)'; return; }
+        let cal=0,p=0; items.forEach(it=>{ const m=mealById(it.m); if(m){cal+=Math.round(m.cal*it.port);p+=Math.round(m.p*it.port);} });
+        txt += '\n' + d + ' (' + cal + ' kcal, ' + p + 'g P):\n' + items.map(i=>{ const m=mealById(i.m); return m ? '  - ' + m.n + (i.port!==1?(' x'+i.port):'') : ''; }).join('\n');
+    });
+    navigator.clipboard.writeText(txt).then(()=>alert('Copied!')).catch(()=>{
+        const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); alert('Copied!');
+    });
+}
+
+/* ---------- SETTINGS ---------- */
+function openSettings(){
+    const t = state.targets;
+    ['Cal','P','C','F'].forEach(k => document.getElementById('set'+(k==='Cal'?'Cal':k)).value = t[k.toLowerCase()]);
+    document.getElementById('setModal').showModal();
+}
+function saveTargets(){
+    state.targets = {
+        cal: parseInt(document.getElementById('setCal').value)||1940,
+        p: parseInt(document.getElementById('setP').value)||160,
+        c: parseInt(document.getElementById('setC').value)||190,
+        f: parseInt(document.getElementById('setF').value)||60
+    };
+    saveState();
+    document.getElementById('setModal').close();
+    updateTargetLine(); renderWeek();
+}
+function updateTargetLine(){
+    const t = state.targets;
+    document.getElementById('targetLine').textContent = `${t.cal} kcal · ${t.p}P / ${t.c}C / ${t.f}F`;
+}
+
+/* ---------- WEEK LABEL ---------- */
+function weekRangeLabel(){
+    const now = new Date();
+    const mon = new Date(now); mon.setDate(now.getDate() - ((now.getDay()+6)%7));
+    const sun = new Date(mon); sun.setDate(mon.getDate()+6);
+    const fmt = d => d.toLocaleDateString('en-AU',{day:'numeric',month:'short'});
+    return fmt(mon) + ' – ' + fmt(sun);
+}
+
+/* ---------- INIT ---------- */
+loadState();
+updateTargetLine();
+document.getElementById('weekLabel').textContent = weekRangeLabel();
+renderBank();
+renderWeek();
+window.addEventListener('resize', () => { /* zones recompute live */ });
+</script>
+</body>
+</html>
